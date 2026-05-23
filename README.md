@@ -1,6 +1,6 @@
 # Bearing Fault Detection using Signal Processing & Machine Learning
 
-This is a self-initiated Masters project where I'm trying to detect and classify bearing faults from raw vibration signals. The idea is to go from raw sensor data all the way to a trained ML model that can automatically tell you what type of fault a bearing has — or if it's healthy.
+This is a self-initiated Project where I'm trying to detect and classify bearing faults from raw vibration signals. The idea is to go from raw sensor data all the way to a trained ML model that can automatically tell you what type of fault a bearing has or if it's healthy.
 
 I'm doing this to learn signal processing and machine learning together on a real engineering problem.
 
@@ -114,7 +114,7 @@ Label 1 (Outer Ring) clearly has much higher kurtosis than the others. This is a
 
 **RMS vs Kurtosis scatter plot:**
 
-![RMS vs Kurtosis](figures/Rms vs Kurstosis plot.png)
+![RMS vs Kurtosis](figures/Rms_vs_Kurstosis_plot.png)
 
 This is the most interesting result of Phase 1. The outer ring cluster (red) is completely separated from everything else — high RMS and high kurtosis. The normal, inner ring, and ball signals are bunched together on the left with low RMS. This means the features are strong enough for a classifier to separate at least the outer ring fault very cleanly.
 
