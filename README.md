@@ -1,53 +1,28 @@
-# Bearing Fault Detection using Signal Processing & Machine Learning
+# Bearing Fault Detection — Signal Processing & Machine Learning
 
-This is a self-initiated Project where I'm trying to detect and classify bearing faults from raw vibration signals. The idea is to go from raw sensor data all the way to a trained ML model that can automatically tell you what type of fault a bearing has or if it's healthy.
+A self-initiated Masters project. Goal: take raw vibration signals from a bearing and automatically classify what type of fault it has — or if it's healthy.
 
-I'm doing this to learn signal processing and machine learning together on a real engineering problem.
-
----
-
-## The Data
-
-I used the **CWRU (Case Western Reserve University) Bearing Dataset** — it's a publicly available benchmark dataset widely used in bearing fault detection research.
-
-The data contains vibration signals recorded from a drive-end bearing at 12,000 Hz sampling rate, with 4 conditions:
-- **Normal** — healthy bearing
-- **Outer Race fault** — 0.007 inch fault diameter
-- **Inner Race fault** — 0.007 inch fault diameter
-- **Ball fault** — 0.007 inch fault diameter
-
-All signals were recorded at 1797 RPM shaft speed.
+**Dataset:** CWRU (Case Western Reserve University) Bearing Dataset — 12,000 Hz, 1797 RPM, 4 conditions:
+`0 = Normal` | `1 = Outer Race` | `2 = Inner Race` | `3 = Ball fault`
 
 ---
 
-## Phase 1 — Looking at the Raw Data
+## Month 1 — Signal Processing
 
-First thing I did was just plot the raw signals to see what they look like.
+### Raw Signals
+<p align="left">
+<img src="figures/inertial_raw_data.png" width="320"/>
+<img src="figures/zoomed_raw_data.png" width="320"/>
+</p>
 
-![Raw Signals](figures/inertial_raw_data.png)
+Outer ring signal has visibly higher amplitude. Zooming in shows periodic bursts — impacts of the ball hitting the damaged spot
 
-You can see the outer ring signal has much higher amplitude than the rest — the fault is physically creating bigger vibrations. The normal signal looks the most "smooth" and bounded. But honestly, just looking at the raw signal doesn't tell you much about *what type* of fault it is.
-
-I also zoomed into a small window (first 0.1 seconds) to see individual impacts:
-
-![Zoomed Raw Data](figures/zoomed_raw_data.png)
-
-In the outer ring plot you can clearly see **periodic bursts** — those are the impacts of the ball hitting the damaged spot on the outer race. Each burst happens at a regular interval. This is what we're trying to detect.
 
 ---
 
-## Phase 2 — Characteristic Frequencies
+### Characteristic Frequencies
+Calculated from bearing geometry — these are the frequencies fault impacts repeat at:
 
-Before doing any signal processing, I calculated the **characteristic frequencies** of the bearing from its geometry. These are the frequencies at which fault impacts would repeat if each component was damaged.
-
-The value use:
-- Pitch diameter: 38.5 mm
-- Ball diameter: 7.94 mm  
-- Number of balls: 9
-- Contact angle: 0°
-- Shaft speed: 1797 RPM
-
-This gives:
 | Frequency | Value | Meaning |
 |---|---|---|
 | BPFO | ~107 Hz | Ball pass frequency, outer race |
@@ -55,89 +30,106 @@ This gives:
 | BSF | — | Ball spin frequency |
 | FTF | — | Fundamental train frequency |
 
-These act like a **fingerprint** — if a bearing has an outer race fault, its vibration signal will contain energy repeating at exactly BPFO times per second.
+<p align="center"><img src="figures/indicating_frequencies.png" width="700"/></p>
 
 ---
 
-## Phase 3 — Hilbert Envelope Analysis
+### Hilbert Envelope Analysis
+Pipeline: **Bandpass filter (3000–5000 Hz) → Hann window → Hilbert transform → DC removal → FFT**
 
-This is the main signal processing step. The pipeline I built:
+<p align="center"><img src="figures/envelope_analysis.png" width="700"/></p>
 
-1. **Bandpass filter** (3000–5000 Hz) — isolates the resonance band where fault impacts are amplified
-2. **Hann window** — reduces spectral leakage before FFT
-3. **Hilbert transform** — extracts the envelope (the "outline" of the signal amplitude)
-4. **Remove DC component** — subtracts the mean to eliminate the zero-frequency spike
-5. **FFT of envelope** — converts to frequency domain to see what frequencies dominate
-
-The result is called the **envelope spectrum**. If there's a fault, you should see a sharp peak at the corresponding characteristic frequency.
-
-![Envelope Analysis](figures/envelope_analysis.png)
-
-**What I found:**
-
-- **Normal signal** — completely flat near BPFO, amplitude ~1e-11. No periodic fault, no peak. Exactly as expected.
-- **Outer ring signal** — sharp, dominant peak sitting exactly on the BPFO line at ~107 Hz, with harmonics at 2× and 3× BPFO. This is a textbook outer race fault signature. Very clear result.
-- **Inner ring signal** — some activity near BPFI but no clean sharp peak. Inner race faults are harder to detect because the fault rotates through the load zone, causing amplitude modulation that smears the peak.
-- **Ball signal** — weak signal overall. Ball faults are generally the hardest to detect with basic envelope analysis.
-
-I also plotted the FFT of the raw signals with the characteristic frequencies marked as reference:
-
-![Indicating Frequencies](figures/indicating_frequencies.png)
+- **Normal** — flat noise floor at BPFO. No fault.
+- **Outer Ring** — sharp peak exactly at BPFO with harmonics at 2× and 3×. Textbook fault signature.
+- **Inner Ring** — weak activity near BPFI. Harder to detect due to amplitude modulation.
+- **Ball** — weakest signal. Ball faults are hardest to detect with envelope analysis.
 
 ---
 
-## Phase 4 — Feature Extraction
-
-After validating the signal processing, I extracted numerical features from the signals to use as input for ML models.
-
-I split each signal into non-overlapping windows of 1024 samples and computed 5 features per window:
+### Feature Extraction
+Each signal split into 1024-sample windows. 5 features computed per window:
 
 | Feature | Why |
 |---|---|
-| RMS | Overall vibration energy — faulty bearings vibrate harder |
-| Kurtosis | Impulsiveness — fault impacts make the signal very spiky. Normal ~3, faulty can be 6–20+ |
-| Crest Factor | Peak divided by RMS — another measure of impulsiveness |
-| Skewness | Asymmetry of the signal distribution |
+| RMS | Overall vibration energy |
+| Kurtosis | Impulsiveness — faulty signals are spiky |
+| Crest Factor | Peak/RMS ratio |
+| Skewness | Signal asymmetry |
 | Peak-to-Peak | Absolute vibration range |
 
-This gave me a DataFrame with ~470 rows (windows) × 5 features + 1 label column, saved as `bearing_features.csv`.
+**~470 windows × 5 features** saved to `bearing_features.csv`
+
+<p align="left">
+  <img src="figures/box_plot_kurtosis.png" width="320"/>
+  <img src="figures/Rms_vs_Kurstosis_plot.png" width="320"/>
+</p>
+
+Outer ring cluster (Label 1) is completely separated in RMS vs Kurtosis space. Ball and Normal overlap — this becomes the main classification challenge.
 
 ---
 
-## Phase 5 — Visualising the Features
+## Month 2 — Machine Learning
 
-**Kurtosis boxplot by fault type:**
-
-![Kurtosis Boxplot](figures/box_plot_kurtosis.png)
-
-Label 1 (Outer Ring) clearly has much higher kurtosis than the others. This is already telling us that kurtosis alone could separate the outer ring fault from normal. The other classes are more overlapping.
-
-**RMS vs Kurtosis scatter plot:**
-
-![RMS vs Kurtosis](figures/Rms_vs_Kurstosis_plot.png)
-
-This is the most interesting result of Phase 1. The outer ring cluster (red) is completely separated from everything else — high RMS and high kurtosis. The normal, inner ring, and ball signals are bunched together on the left with low RMS. This means the features are strong enough for a classifier to separate at least the outer ring fault very cleanly.
+### Data Preparation
+- 80/20 stratified train/test split
+- StandardScaler fitted on training data only — applied to both sets
 
 ---
 
-## What's Next — Month 2
+### Random Forest vs SVM (RBF kernel)
 
-Now that the feature DataFrame is ready, I'll move into ML classification:
+**Confusion Matrices:**
+<p align="left">
+  <img src="figures/confustion_matrix_randomclassifier.png" width="320"/>
+  <img src="figures/confusion_matrix_svm(rbf).png" width="320"/>
+</p>
 
-- Train **Random Forest**, **SVM**, and **KNN** classifiers on the features
-- Evaluate with confusion matrix and classification report
-- See if the model can correctly classify all 4 fault types
-- If inner ring and ball overlap is a problem, I'll explore adding more features
+**Feature Importance:**
+<p align="left">
+  <img src="figures/importance_random classifier.png" width="320"/>
+  <img src="figures/Svm_feature_importance(rbf).png" width="320"/>
+</p>
+
+Both models agree — RMS and Peak-to-Peak are the most important features. Crest Factor and Skewness contribute almost nothing.
 
 ---
 
-## Libraries Used
+### Results
 
+| Model | Test Accuracy | CV Mean | CV Std |
+|---|---|---|---|
+| Random Forest | 95.8% | 94.7% | 3.0% |
+| SVM RBF | 95.8% | 93.6% | 2.8% |
+
+Both models achieve 95.8% on the test set. The only consistent mistake across both: **Ball fault misclassified as Normal** — visible in the scatter plot from Month 1 and confirmed by both confusion matrices.
+
+**Winner: Random Forest** — higher cross validation mean, simpler to tune.
+
+---
+
+### Key Findings
+- Outer Race fault is perfectly detectable with simple envelope analysis
+- Ball fault is the hardest class — overlaps with Normal in feature space
+- RMS and Peak-to-Peak drive classification — Crest Factor and Skewness are weak features
+- Both models hit the same ceiling — improving accuracy requires better features, not better models
+
+---
+
+## Project Structure
+```
+self project/
+├── src/
+│   ├── Signalverarbeitung.py   # Signal processing pipeline
+│   ├── data_prep.py            # Data loading, splitting, scaling
+│   ├── learning_model.py       # Random Forest
+│   └── svm_model.py            # SVM
+├── figures/                    # All plots
+├── Data/                       # .mat files (not uploaded)
+└── bearing_features.csv        # Extracted features
+```
+
+## Libraries
 `numpy` `scipy` `matplotlib` `pandas` `scikit-learn`
 
----
-
-## Dataset Source
-
-Case Western Reserve University Bearing Data Center  
-https://engineering.case.edu/bearingdatacenter
+## Dataset
+CWRU Bearing Data Center — https://engineering.case.edu/bearingdatacenter
